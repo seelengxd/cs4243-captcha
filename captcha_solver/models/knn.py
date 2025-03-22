@@ -27,18 +27,19 @@ def load_images_from_folder(folder):
     return np.array(images), np.array(labels)
 
 X_train, y_train = load_images_from_folder(TRAIN_CHARACTERS_RESIZED)
+
 knn = KNeighborsClassifier(n_neighbors=3)
 knn.fit(X_train, y_train)
 
 def get_captcha_from_image(img):
     _, boxes = get_bounding_boxes(img)
-    # img = color_letters_black(img)
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     letters = [resize_with_padding(img[box[0]:box[1], box[2]:box[3]], 169, 78) for box in boxes]
     predictions = knn.predict([cv2.resize(letter, SIZE).flatten() for letter in letters])
     return len(boxes), "".join(predictions)
 
 images_dict = {
-    path: cv2.imread(os.path.join(TEST_FOLDER, path), cv2.IMREAD_GRAYSCALE)
+    path: cv2.imread(os.path.join(TEST_FOLDER, path))
     for path in os.listdir(TEST_FOLDER) if path.endswith(".png")
 }
 
