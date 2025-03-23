@@ -1,13 +1,20 @@
+"""
+This script resizes the characters to be of the same size.
+The size is the largest of the images (169 x 78)
+
+It maintains the aspect ratio of the original image and pads the rest with white.
+"""
+
 
 import multiprocessing
 import os
 import string
+from captcha_solver.preprocessing.utils import resize_with_padding
 import cv2
 import concurrent.futures
-import numpy as np
 
-INPUT_FOLDERS = ["../data/train_cleaned_characters", "../data/test_cleaned_characters"]
-OUTPUT_FOLDERS = ["../data/train_cleaned_characters_resized", "../data/test_cleaned_characters_resized"]
+INPUT_FOLDERS = ["data/train_cleaned_characters", "data/test_cleaned_characters"]
+OUTPUT_FOLDERS = ["data/train_cleaned_characters_resized", "data/test_cleaned_characters_resized"]
 
 def get_image_size(image):
     return cv2.imread(image).shape
@@ -16,42 +23,6 @@ def extract_sizes(image, sizes, lock):
     image_size = get_image_size(image)
     with lock:
         sizes.append(image_size)
-
-# 2. Resize all images to the same size. Maintain aspect ratio of the original image. Save to folder.
-def resize_with_padding(image, target_width, target_height):
-    """
-    Resizes an image while maintaining aspect ratio, 
-    scaling it to fit within target dimensions, and padding the rest with white.
-
-    Parameters:
-        image (numpy.ndarray): Input image.
-        target_width (int): Target width.
-        target_height (int): Target height.
-
-    Returns:
-        numpy.ndarray: Resized and padded image.
-    """
-    h, w = image.shape[:2]
-    
-    # Compute scaling factor to fit within the target size
-    scale = min(target_width / w, target_height / h)
-    new_w = int(w * scale)
-    new_h = int(h * scale)
-
-    # Resize image
-    resized = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_AREA)
-
-    # Create a white canvas
-    result = np.ones((target_height, target_width, 3), dtype=np.uint8) * 255
-
-    # Compute top-left corner for centering
-    x_offset = (target_width - new_w) // 2
-    y_offset = (target_height - new_h) // 2
-
-    # Place resized image onto the white canvas
-    result[y_offset:y_offset+new_h, x_offset:x_offset+new_w] = resized
-
-    return result
 
 def resize(input_folder, output_folder, character_folder, image, target_width, target_height):
     image_path = os.path.join(input_folder, character_folder, image)
