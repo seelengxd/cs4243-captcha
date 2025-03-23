@@ -1,3 +1,11 @@
+"""
+Base class for segmentation + single character recognition models.
+Segmentation accuracy (count is correct):  0.8118962887646162
+
+By implementing this class and implementing fit() and predict() for a model that recognises individual characters,
+you can create a new model for segmenting characters from images.
+"""
+
 from abc import ABC, abstractmethod
 import multiprocessing
 import os
@@ -119,7 +127,13 @@ class SegmentationModelBase(ABC):
             results = [self.guess_captcha(image) for image in tqdm(images)]
 
         correct = sum(result[0][0] for result in results)
+        length_correct = sum(
+            len(image.split("-")[0]) == len(guess) for (_, image, guess) in results
+        )
         total = sum(result[0][1] for result in results)
+        print(
+            f"Segmentation accuracy (count is correct): {length_correct / total} ({length_correct}/{total})"
+        )
         print(
             f"Accuracy: {correct / total if total > 0 else 0} ({correct}/{total})",
         )

@@ -1,8 +1,8 @@
 """
 Baseline Segmentation+CNN model.
 
-Character accuracy: 0.664789826230463
-Captcha accuracy: 0.1997966446365023
+Character accuracy: 0.745655761576546
+Captcha accuracy: 0.25673614641586173
 
 References: https://pytorch.org/tutorials/beginner/blitz/cifar10_tutorial.html
 """
@@ -37,12 +37,10 @@ class Net(nn.Module):
         return x
 
 
-net = Net()
-
-
 class CNNCaptcha(SegmentationModelBase):
     net: Net
     LABELS = "0123456789abcdefghijklmnopqrstuvwxyz"
+    EPOCH_COUNT = 80
 
     def _transform_x(self, X: np.ndarray) -> torch.Tensor:
         N = X.shape[0]  # Number of images
@@ -74,7 +72,7 @@ class CNNCaptcha(SegmentationModelBase):
         criterion = nn.CrossEntropyLoss()
         optimizer = optim.SGD(self.net.parameters(), lr=0.001, momentum=0.9)
 
-        for epoch in range(10):  # Train for 10 epochs
+        for epoch in range(self.EPOCH_COUNT):
             running_loss = 0.0
             for i, data in enumerate(dataloader):
                 inputs, labels = data
