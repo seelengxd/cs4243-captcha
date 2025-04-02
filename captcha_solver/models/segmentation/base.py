@@ -16,6 +16,7 @@ import random
 
 import cv2
 import numpy as np
+from functools import cache
 
 from preprocessing.utils import get_bounding_boxes, resize_with_padding
 
@@ -35,6 +36,7 @@ class SegmentationModelBase(ABC):
     def __init__(self, target_image_size: tuple[int, int]):
         self.target_image_size = target_image_size
 
+    @cache
     def load_images_from_folder(self, folder: str) -> tuple[np.ndarray, np.ndarray]:
         """
         Load images from a folder and return them as a tuple of numpy arrays.
