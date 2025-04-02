@@ -7,6 +7,8 @@ Captcha accuracy: 0.25673614641586173
 References: https://pytorch.org/tutorials/beginner/blitz/cifar10_tutorial.html
 """
 
+import os
+import pickle
 import numpy as np
 
 from models.segmentation.base import SegmentationModelBase
@@ -15,6 +17,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+
+import argparse
 
 
 class Net(nn.Module):
@@ -119,8 +123,22 @@ class CNNCaptcha(SegmentationModelBase):
 
 
 if __name__ == "__main__":
-    model = CNNCaptcha((32, 32))
-    model.train()
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "-f", "--filename", default="segmentation_and_cnn_model.pkl", required=False
+    )
+    args = parser.parse_args()
+    filename = args.filename
+
+    if os.path.exists(filename):
+        with open(filename, "rb") as fr:
+            model = pickle.load(fr)
+    else:
+        model = CNNCaptcha((32, 32))
+        model.train()
+        with open(filename, "wb") as fw:
+            pickle.dump(model, fw)
+
     print(model.evaluate_characters())
     model.guess_random_captcha()
     model.evaluate_captcha()
