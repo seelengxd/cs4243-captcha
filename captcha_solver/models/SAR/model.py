@@ -11,6 +11,24 @@ import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader, random_split
 import torchvision.transforms as transforms
 
+def longest_common_subsequence_length(s1: str, s2: str) -> int:
+    m, n = len(s1), len(s2)
+    dp = [[0] * (n + 1) for _ in range(m + 1)]
+    for i in range(1, m + 1):
+        for j in range(1, n + 1):
+            if s1[i - 1] == s2[j - 1]:
+                dp[i][j] = dp[i - 1][j - 1] + 1
+            else:
+                dp[i][j] = max(dp[i - 1][j], dp[i][j - 1])
+    return dp[m][n]
+
+# character_accuracy for a single CAPTCHA
+def character_accuracy(gt: str, pred: str) -> float:
+    if len(gt) == 0:
+        return 1.0 if len(pred) == 0 else 0.0
+    lcs_len = longest_common_subsequence_length(gt, pred)
+    return lcs_len / len(gt)
+
 chars = list("0123456789abcdefghijklmnopqrstuvwxyz")
 pad_token = "<pad>"
 sos_token = "<sos>"
@@ -63,6 +81,12 @@ transform = transforms.Compose([
     transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])  
 ])
 
+test_transform = transforms.Compose([
+    transforms.Resize((79, 729)),  
+    transforms.ToTensor(),        
+    transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])  
+])
+
 class CNNFeatureExtractor(nn.Module):
     def __init__(self):
         super(CNNFeatureExtractor, self).__init__()
@@ -89,16 +113,18 @@ class CNNFeatureExtractor(nn.Module):
         return features
     
 class EncoderRNN(nn.Module):
-    def __init__(self, input_size, hidden_size, num_layers=1):
+    def __init__(self, input_size, hidden_size, num_layers=1, dropout=0.5):
         super(EncoderRNN, self).__init__()
         self.lstm = nn.LSTM(input_size, hidden_size, num_layers=num_layers,
-                            batch_first=True, bidirectional=True)
+                            batch_first=True, bidirectional=True, dropout=dropout)
+        self.dropout = nn.Dropout(dropout)
     def forward(self, x):
         outputs, (h_n, c_n) = self.lstm(x)
+        outputs = self.dropout(outputs)
         return outputs, (h_n, c_n)
 
 class AttentionDecoder(nn.Module):
-    def __init__(self, hidden_size, enc_output_dim, vocab_size, embedding_dim=128, attention_dim=128):
+    def __init__(self, hidden_size, enc_output_dim, vocab_size, embedding_dim=128, attention_dim=128, dropout=0.5):
         super(AttentionDecoder, self).__init__()
         self.hidden_size = hidden_size
         self.enc_output_dim = enc_output_dim 
@@ -112,9 +138,10 @@ class AttentionDecoder(nn.Module):
         self.fc_out = nn.Linear(hidden_size + enc_output_dim, vocab_size)
         self.init_hidden = nn.Linear(enc_output_dim, hidden_size)
         self.init_cell = nn.Linear(enc_output_dim, hidden_size)
+        
+        self.dropout = nn.Dropout(dropout)
     
     def forward(self, encoder_outputs, target_seq=None):
-
         batch_size = encoder_outputs.size(0)
         device = encoder_outputs.device
         enc_proj = self.enc_proj(encoder_outputs) 
@@ -141,7 +168,9 @@ class AttentionDecoder(nn.Module):
             attn_scores = self.attn_score(torch.tanh(enc_proj + dec_proj)).squeeze(2)  
             attn_weights = torch.softmax(attn_scores, dim=1)
             context = torch.bmm(attn_weights.unsqueeze(1), encoder_outputs).squeeze(1)
-            output_logits = self.fc_out(torch.cat([hidden, context], dim=1))
+            
+            hidden_dropout = self.dropout(hidden)
+            output_logits = self.fc_out(torch.cat([hidden_dropout, context], dim=1))
             outputs.append(output_logits)
             
             if target_seq is not None:
@@ -236,6 +265,7 @@ def test_model(test_loader, model, device, model_path="sar_captcha_best.pth"):
     total_char_count = 0
     total_word_correct = 0
     total_word_count = 0
+    total_captcha_accuracy = 0
 
     with torch.no_grad():
         for images, padded_targets, _ in test_loader:
@@ -267,12 +297,15 @@ def test_model(test_loader, model, device, model_path="sar_captcha_best.pth"):
                 if gt == pred:
                     total_word_correct += 1
                 total_word_count += 1
+                total_captcha_accuracy += character_accuracy(gt, pred)
 
     char_match_rate = total_char_correct / total_char_count if total_char_count > 0 else 0
     word_match_rate = total_word_correct / total_word_count if total_word_count > 0 else 0
+    captcha_match_rate = total_captcha_accuracy / total_word_count if total_word_count > 0 else 0
 
     print(f"Single Character Match Rate: {char_match_rate:.4f}")
     print(f"Complete Word Match Rate: {word_match_rate:.4f}")
+    print(f"Captcha Match Rate: {captcha_match_rate:.4f}")
 
     show_images(test_loader, model, device, num_images=6, title_prefix="Test Results")
 
@@ -289,7 +322,8 @@ def main():
     train_dataset, val_dataset = random_split(full_dataset, [train_size, val_size],
                                               generator=torch.Generator().manual_seed(42))
     
-    test_dataset = CaptchaDataset(test_dir, transform=transform)
+    test_dataset = CaptchaDataset(test_dir, transform=test_transform)
+    # test_dataset = CaptchaDataset(test_dir, transform=transform)
     
     train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True, collate_fn=pad_collate_fn)
     val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False, collate_fn=pad_collate_fn)
@@ -303,11 +337,12 @@ def main():
     model.to(device)
     
     criterion = nn.CrossEntropyLoss(ignore_index=char2idx[pad_token])
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-5)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', patience=3, factor=0.5)
     
     num_epochs = 100
     best_val_loss = float('inf')
-    model.load_state_dict(torch.load('sar_captcha_version1.pth'))
+    model.load_state_dict(torch.load('sar_captcha_version2.pth'))
     for epoch in range(1, num_epochs+1):
         model.train()
         total_train_loss = 0.0
@@ -338,6 +373,8 @@ def main():
         
         print(f"Epoch {epoch}/{num_epochs}, Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}")
 
+        scheduler.step(avg_val_loss)
+
         if epoch % 50 == 0:
             show_images(val_loader, model, device, num_images=4, title_prefix=f"Epoch {epoch}")
 
@@ -348,8 +385,12 @@ def main():
 
     print("Testing on test set:")
     show_images(test_loader, model, device, num_images=6, title_prefix="Test Results")
-    test_model(test_loader, model, device)
+    test_model(test_loader, model, device, model_path = 'sar_captcha_version1.pth')
 
 if __name__ == "__main__":
     main()
-
+# version1 baseline Single Character Match Rate: 0.8350 Complete Word Match Rate: 0.4779
+# version2 dropout + R2 + Scheduler Single Character Match Rate: 0.8564 Complete Word Match Rate: 0.5297 
+# best version2 + augmentation  Single Character Match Rate: 0.8672 Complete Word Match Rate: 0.5506, Captcha Match Rate: 0.8810 
+# nar non-autoregressive Single Character Match Rate: 0.8565 Complete Word Match Rate: 0.5328 
+# beam search 0.8642 0.5521
