@@ -3,6 +3,7 @@ import torch.nn as nn
 from gateCNN import GateCNN 
 from baseCNN import BaseCNN
 from CRNN import CRNN
+from baseGateCNN import BaseGateCNN
 from PIL import Image
 import glob
 import os
@@ -50,14 +51,14 @@ def run_inference_for_epoch(epoch, gpu_id):
     # Hyperparameters
     input_channels = 3
     hidden_channels = 128
-    pretrained = True
-    backbone = "resnet50"
-    num_lstm_layers = 4
-    # model_name = f"CRNN_epoch{epoch}_resnet50_True_lstmhidden256_lstmlayer4_channel3_lr0.001_batchsize64"
-    model_name = f"BaseCNN_epoch{epoch}_hidden128_channel3_lr0.001_batchsize16"
+    pretrained = False
+    backbone = "resnet18"
+    num_lstm_layers = 2
+    # model_name = f"CRNN_epoch{epoch}_resnet18_True_lstmhidden128_lstmlayer2_channel3_lr0.001_batchsize64"
+    model_name = f"BaseGateCNN_epoch{epoch}_hidden128_channel3_lr0.001_batchsize64"
 
     # Instantiate the model
-    model = BaseCNN(num_classes=num_classes, hidden_channels=hidden_channels)
+    model = BaseGateCNN(num_classes=num_classes, hidden_channels=hidden_channels)
     # model = CRNN(num_chars=num_classes, hidden_size=hidden_channels, backbone=backbone,
     #              pretrained=pretrained, num_lstm_layers=num_lstm_layers)
     model = model.to(device)
@@ -121,7 +122,7 @@ def run_inference_for_epoch(epoch, gpu_id):
     return accuracy
 
 def main():
-    epochs = range(10, 26)
+    epochs = range(7, 11)
     accuracies = {}
 
     with concurrent.futures.ProcessPoolExecutor(max_workers=8) as executor:
